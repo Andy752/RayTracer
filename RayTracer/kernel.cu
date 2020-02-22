@@ -14,14 +14,13 @@
 #include "camera.h"
 #include "material.h"
 
-// limited version of checkCudaErrors from helper_cuda.h in CUDA examples
 #define checkCudaErrors(val) check_cuda( (val), #val, __FILE__, __LINE__ )
 
 void check_cuda(cudaError_t result, char const* const func, const char* const file, int const line) {
 	if (result) {
 		std::cerr << "CUDA error = " << static_cast<unsigned int>(result) << " at " <<
 			file << ":" << line << " '" << func << "' \n";
-		// Make sure we call CUDA Device Reset before exiting
+		// 保证在退出前重置CUDA设备
 		cudaDeviceReset();
 		exit(99);
 	}
@@ -73,13 +72,16 @@ __global__ void render_init(int max_x, int max_y, curandState* rand_state) {
 }
 
 __global__ void render(vec3* fb, int max_x, int max_y, int ns, camera** cam, hitable** world, curandState* rand_state) {
+	// i,j是当前thread所在grid中的唯一标识，以下计算是当grid和block二维时的计算方式
 	int i = threadIdx.x + blockIdx.x * blockDim.x;
 	int j = threadIdx.y + blockIdx.y * blockDim.y;
-	if ((i >= max_x) || (j >= max_y)) return;
-	int pixel_index = j * max_x + i;
+	if ((i >= max_x) || (j >= max_y)) return; // 分配的总线程数超过了1200x800，超过的部分不需要参与计算
+	int pixel_index = j * max_x + i; // pixel_index是把照片上(i,j)像素映射到fb中的下标变量
 	curandState local_rand_state = rand_state[pixel_index];
 	vec3 col(0, 0, 0);
 	for (int s = 0; s < ns; s++) {
+		// 利用当前线程计算照片中的像素(i,j)，分别计算r,g,b
+		// 注意转换为float是很重要的，在GPU上float类型比double类型效率高
 		float u = float(i + curand_uniform(&local_rand_state)) / float(max_x);
 		float v = float(j + curand_uniform(&local_rand_state)) / float(max_y);
 		ray r = (*cam)->get_ray(u, v, &local_rand_state);
@@ -150,18 +152,26 @@ __global__ void free_world(hitable** d_list, hitable** d_world, camera** d_camer
 int main() {
 	int nx = 1200;
 	int ny = 800;
-	int ns = 100;
+	int ns = 10;
+	// 设定每个block包含thread的数量为 8 x 8
+	/* 设定为 8 x 8 的理由有两个：1.这样的一个较小的方形结构使得每个像素执行的工作量相似。
+	假设在一个block中有一个像素执行的工作量比其他的大很多，那么这个block的效率会受限。
+	我的理解是由于这些thread是并行的，所以每个block的效率取决于效率最低的thread。
+	2. 因为8x8=64，这是32的倍数。每个block的线程数量应为32的倍数 */
 	int tx = 8;
 	int ty = 8;
 
-	std::cerr << "Rendering a " << nx << "x" << ny << " image with " << ns << " samples per pixel ";
-	std::cerr << "in " << tx << "x" << ty << " blocks.\n";
+	std::cerr << "渲染一张大小为 " << nx << "x" << ny << " 的照片。每个像素采集" << ns << "个样本。";
+	std::cerr << "CUDA块大小为" << tx << "x" << ty << "。\n";
 
-	int num_pixels = nx * ny;
-	size_t fb_size = num_pixels * sizeof(vec3);
+	int num_pixels = nx * ny; // 照片的像素数量
+	size_t fb_size = num_pixels * sizeof(vec3); // 一个帧缓冲的大小
 
-	// allocate FB
+	// 分配帧缓冲
+	/* 为了进一步提高性能, 可以让GPU 把float变量转为8-bit的
+	/ 再把数据读取回来，这样可以节省数据传输带宽*/
 	vec3* fb;
+	// 统一内存使用一个托管内存来共同管理host和device中的内存，并且自动在host和device中进行数据传输
 	checkCudaErrors(cudaMallocManaged((void**)& fb, fb_size));
 
 	// allocate random state
@@ -189,9 +199,9 @@ int main() {
 
 	clock_t start, stop;
 	start = clock();
-	// Render our buffer
-	dim3 blocks(nx / tx + 1, ny / ty + 1);
-	dim3 threads(tx, ty);
+	// 在GPU上渲染帧缓冲
+	dim3 blocks(nx / tx + 1, ny / ty + 1); // +1保证缓冲区(grid)不小于1200 x 800
+	dim3 threads(tx, ty); //每个block的规格为 tx * ty
 	render_init << <blocks, threads >> > (nx, ny, d_rand_state);
 	checkCudaErrors(cudaGetLastError());
 	checkCudaErrors(cudaDeviceSynchronize());
@@ -200,7 +210,7 @@ int main() {
 	checkCudaErrors(cudaDeviceSynchronize());
 	stop = clock();
 	double timer_seconds = ((double)(stop - start)) / CLOCKS_PER_SEC;
-	std::cerr << "took " << timer_seconds << " seconds.\n";
+	std::cerr << "渲染耗时：" << timer_seconds << " 秒。\n";
 
 	// Output FB as Image
 	std::ofstream os("cover.ppm");
