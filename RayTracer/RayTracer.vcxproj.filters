@@ -1,0 +1,44 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="core">
+      <UniqueIdentifier>{67dbbad6-d073-4637-baeb-ebf2ba1f178e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="svpng">
+      <UniqueIdentifier>{d4dc6724-70f9-46f5-97c0-c42bd8329dcc}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\core\camera.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\hitable.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\hitable_list.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\material.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\ray.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\sphere.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\vec3.h">
+      <Filter>core</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="src\core\kernel.cu">
+      <Filter>core</Filter>
+    </CudaCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="src\svpng\svpng.inc">
+      <Filter>svpng</Filter>
+    </None>
+  </ItemGroup>
+</Project>

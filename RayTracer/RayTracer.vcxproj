@@ -10,6 +10,21 @@
       <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\core\camera.h" />
+    <ClInclude Include="src\core\hitable.h" />
+    <ClInclude Include="src\core\hitable_list.h" />
+    <ClInclude Include="src\core\material.h" />
+    <ClInclude Include="src\core\ray.h" />
+    <ClInclude Include="src\core\sphere.h" />
+    <ClInclude Include="src\core\vec3.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="src\core\kernel.cu" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="src\svpng\svpng.inc" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{A4EC4AD6-6B65-4919-AF24-18A1A071FE4D}</ProjectGuid>
     <RootNamespace>RayTracer</RootNamespace>
@@ -76,18 +91,6 @@
       <TargetMachinePlatform>64</TargetMachinePlatform>
     </CudaCompile>
   </ItemDefinitionGroup>
-  <ItemGroup>
-    <CudaCompile Include="kernel.cu" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="camera.h" />
-    <ClInclude Include="hitable.h" />
-    <ClInclude Include="hitable_list.h" />
-    <ClInclude Include="material.h" />
-    <ClInclude Include="ray.h" />
-    <ClInclude Include="sphere.h" />
-    <ClInclude Include="vec3.h" />
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
     <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 10.2.targets" />

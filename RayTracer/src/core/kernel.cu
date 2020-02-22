@@ -1,12 +1,16 @@
-﻿#include "cuda_runtime.h"
-#include "device_launch_parameters.h"
+﻿#include <cuda_runtime.h>
+#include <device_launch_parameters.h>
+#include <curand_kernel.h>
 
 #include <fstream>
-
 #include <iostream>
-#include <time.h>
-#include <float.h>
-#include <curand_kernel.h>
+#include <ctime>
+#include <cfloat>
+#include <cstdio>
+#include <new>
+
+#include "../svpng/svpng.inc"
+
 #include "vec3.h"
 #include "ray.h"
 #include "sphere.h"
@@ -15,6 +19,7 @@
 #include "material.h"
 
 #define checkCudaErrors(val) check_cuda( (val), #val, __FILE__, __LINE__ )
+
 
 void check_cuda(cudaError_t result, char const* const func, const char* const file, int const line) {
 	if (result) {
@@ -149,9 +154,32 @@ __global__ void free_world(hitable** d_list, hitable** d_world, camera** d_camer
 	delete* d_camera;
 }
 
+
+void write_to_png(char const* filename, int w, int h, int n, vec3* data) {
+	//把vec3缓存转为unsigned char*缓存
+	using namespace std;
+	unsigned char* uc_data;
+	size_t uc_data_size = w * h * n * sizeof(unsigned char);
+	//= new unsigned char[sizeof(data) / sizeof(data[0]) * n];
+	checkCudaErrors(cudaMallocManaged((void**)& uc_data, uc_data_size));
+	unsigned char* p = uc_data;
+	FILE* fp = fopen(filename, "wb");
+	for (int j = h - 1; j >= 0; j--) {
+		for (int i = 0; i < w; i++) {
+			size_t pixel_index = j * w + i;
+			*p++ = (unsigned char)(255.99 * data[pixel_index].r());    /* R */
+			*p++ = (unsigned char)(255.99 * data[pixel_index].g());    /* G */
+			*p++ = (unsigned char)(255.99 * data[pixel_index].b());    /* B */
+		}
+	}
+	svpng(fp, w, h, uc_data, 0);
+	fclose(fp);
+	checkCudaErrors(cudaFree(uc_data));
+}
+
 int main() {
-	int nx = 1200;
-	int ny = 800;
+	int nx = 500;
+	int ny = 300;
 	int ns = 10;
 	// 设定每个block包含thread的数量为 8 x 8
 	/* 设定为 8 x 8 的理由有两个：1.这样的一个较小的方形结构使得每个像素执行的工作量相似。
@@ -213,7 +241,7 @@ int main() {
 	std::cerr << "渲染耗时：" << timer_seconds << " 秒。\n";
 
 	// Output FB as Image
-	std::ofstream os("cover.ppm");
+	std::ofstream os("result/temp.ppm");
 	os << "P3\n" << nx << " " << ny << "\n255\n";
 	for (int j = ny - 1; j >= 0; j--) {
 		for (int i = 0; i < nx; i++) {
@@ -225,6 +253,9 @@ int main() {
 		}
 	}
 	os.close();
+
+	// write to png
+	write_to_png("test.png", nx, ny, 3, fb);
 
 	// clean up
 	checkCudaErrors(cudaDeviceSynchronize());
@@ -238,3 +269,4 @@ int main() {
 
 	cudaDeviceReset();
 }
+
