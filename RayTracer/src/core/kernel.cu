@@ -7,7 +7,7 @@
 #include <ctime>
 #include <cfloat>
 #include <cstdio>
-#include <new>
+#include <cstdlib>
 
 #include "../svpng/svpng.inc"
 
@@ -20,6 +20,12 @@
 
 #define checkCudaErrors(val) check_cuda( (val), #val, __FILE__, __LINE__ )
 
+
+/*
+You should be able to take your C++ code, add the appropriate __device__ annotations, 
+add appropriate delete or cudaFree calls, adjust any floating point constants and plumb 
+the local random state as needed to complete the translation.
+*/
 
 void check_cuda(cudaError_t result, char const* const func, const char* const file, int const line) {
 	if (result) {
@@ -158,10 +164,7 @@ __global__ void free_world(hitable** d_list, hitable** d_world, camera** d_camer
 void write_to_png(char const* filename, int w, int h, int n, vec3* data) {
 	//把vec3缓存转为unsigned char*缓存
 	using namespace std;
-	unsigned char* uc_data;
-	size_t uc_data_size = w * h * n * sizeof(unsigned char);
-	//= new unsigned char[sizeof(data) / sizeof(data[0]) * n];
-	checkCudaErrors(cudaMallocManaged((void**)& uc_data, uc_data_size));
+	unsigned char* uc_data = (unsigned char*)std::malloc(w * h * n * sizeof(unsigned char));
 	unsigned char* p = uc_data;
 	FILE* fp = fopen(filename, "wb");
 	for (int j = h - 1; j >= 0; j--) {
@@ -174,7 +177,22 @@ void write_to_png(char const* filename, int w, int h, int n, vec3* data) {
 	}
 	svpng(fp, w, h, uc_data, 0);
 	fclose(fp);
-	checkCudaErrors(cudaFree(uc_data));
+	std::free(uc_data);
+}
+
+void write_to_ppm(char const* filename, int w, int h, vec3* data) {
+	std::ofstream os(filename);
+	os << "P3\n" << w << " " << h << "\n255\n";
+	for (int j = h - 1; j >= 0; j--) {
+		for (int i = 0; i < w; i++) {
+			size_t pixel_index = j * w + i;
+			int ir = int(255.99 * data[pixel_index].r());
+			int ig = int(255.99 * data[pixel_index].g());
+			int ib = int(255.99 * data[pixel_index].b());
+			os << ir << " " << ig << " " << ib << "\n";
+		}
+	}
+	os.close();
 }
 
 int main() {
@@ -202,13 +220,15 @@ int main() {
 	// 统一内存使用一个托管内存来共同管理host和device中的内存，并且自动在host和device中进行数据传输
 	checkCudaErrors(cudaMallocManaged((void**)& fb, fb_size));
 
-	// allocate random state
+	// 分配random state，用于在GPU上生成随机数。
+	// 前缀d_表示这些数据仅在GPU上使用。
+	// cudaMalloc分配显卡上的内存
 	curandState* d_rand_state;
 	checkCudaErrors(cudaMalloc((void**)& d_rand_state, num_pixels * sizeof(curandState)));
 	curandState* d_rand_state2;
 	checkCudaErrors(cudaMalloc((void**)& d_rand_state2, 1 * sizeof(curandState)));
 
-	// we need that 2nd random state to be initialized for the world creation
+	// 初始化d_rand_state2，用于创建world
 	rand_init << <1, 1 >> > (d_rand_state2);
 	checkCudaErrors(cudaGetLastError());
 	checkCudaErrors(cudaDeviceSynchronize());
@@ -241,21 +261,8 @@ int main() {
 	std::cerr << "渲染耗时：" << timer_seconds << " 秒。\n";
 
 	// Output FB as Image
-	std::ofstream os("result/temp.ppm");
-	os << "P3\n" << nx << " " << ny << "\n255\n";
-	for (int j = ny - 1; j >= 0; j--) {
-		for (int i = 0; i < nx; i++) {
-			size_t pixel_index = j * nx + i;
-			int ir = int(255.99 * fb[pixel_index].r());
-			int ig = int(255.99 * fb[pixel_index].g());
-			int ib = int(255.99 * fb[pixel_index].b());
-			os << ir << " " << ig << " " << ib << "\n";
-		}
-	}
-	os.close();
-
-	// write to png
-	write_to_png("test.png", nx, ny, 3, fb);
+	//write_to_ppm("result/cover.ppm", nx, ny, fb);
+	write_to_png("result/fuck.png", nx, ny, 3, fb);
 
 	// clean up
 	checkCudaErrors(cudaDeviceSynchronize());
