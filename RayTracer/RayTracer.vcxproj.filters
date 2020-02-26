@@ -30,6 +30,9 @@
     <ClInclude Include="src\core\vec3.h">
       <Filter>core</Filter>
     </ClInclude>
+    <ClInclude Include="src\core\moving_sphere.h">
+      <Filter>core</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="src\core\kernel.cu">

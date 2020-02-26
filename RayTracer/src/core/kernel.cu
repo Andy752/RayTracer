@@ -17,14 +17,16 @@
 #include "hitable_list.h"
 #include "camera.h"
 #include "material.h"
+#include "moving_sphere.h"
 
 #define checkCudaErrors(val) check_cuda( (val), #val, __FILE__, __LINE__ )
 
 
-/*
-You should be able to take your C++ code, add the appropriate __device__ annotations, 
-add appropriate delete or cudaFree calls, adjust any floating point constants and plumb 
-the local random state as needed to complete the translation.
+/* 要点：
+1.在合适的地方添加 __device__ 标志
+2.记得释放资源，如调用cudaFree
+3.记得调整全部浮点数类型为float
+4.合适地使用cuda的随机数
 */
 
 void check_cuda(cudaError_t result, char const* const func, const char* const file, int const line) {
@@ -32,6 +34,7 @@ void check_cuda(cudaError_t result, char const* const func, const char* const fi
 		std::cerr << "CUDA error = " << static_cast<unsigned int>(result) << " at " <<
 			file << ":" << line << " '" << func << "' \n";
 		// 保证在退出前重置CUDA设备
+		std::cerr << cudaGetErrorString(result) << std::endl;
 		cudaDeviceReset();
 		exit(99);
 	}
@@ -112,22 +115,24 @@ __global__ void create_world(hitable** d_list, hitable** d_world, camera** d_cam
 	if (threadIdx.x == 0 && blockIdx.x == 0) {
 		curandState local_rand_state = *rand_state;
 		d_list[0] = new sphere(vec3(0, -1000.0, -1), 1000,
-			new lambertian(vec3(0.5, 0.5, 0.5)));
+			new lambertian(vec3(0.5f, 0.5f, 0.5f)));
 		int i = 1;
 		for (int a = -11; a < 11; a++) {
 			for (int b = -11; b < 11; b++) {
 				float choose_mat = RND;
-				vec3 center(a + RND, 0.2, b + RND);
+				vec3 center(a + 0.9f * RND, 0.2f, b + 0.9f * RND);
 				if (choose_mat < 0.8f) {
-					d_list[i++] = new sphere(center, 0.2,
-						new lambertian(vec3(RND * RND, RND * RND, RND * RND)));
+					//d_list[i++] = new sphere(center, 0.2f,
+					//	new lambertian(vec3(RND * RND, RND * RND, RND * RND)));
+					d_list[i++] = new moving_sphere(center, center + vec3(0.0f, 0.5f * RND, 0.0f), 0.0f, 1.0f, 0.2f,
+						new lambertian(vec3(RND * RND, RND * RND, RND * RND))); // 注意相应修改free_world中的代码
 				}
 				else if (choose_mat < 0.95f) {
-					d_list[i++] = new sphere(center, 0.2,
+					d_list[i++] = new sphere(center, 0.2f,
 						new metal(vec3(0.5f * (1.0f + RND), 0.5f * (1.0f + RND), 0.5f * (1.0f + RND)), 0.5f * RND));
 				}
 				else {
-					d_list[i++] = new sphere(center, 0.2, new dielectric(1.5));
+					d_list[i++] = new sphere(center, 0.2f, new dielectric(1.5));
 				}
 			}
 		}
@@ -139,21 +144,24 @@ __global__ void create_world(hitable** d_list, hitable** d_world, camera** d_cam
 
 		vec3 lookfrom(13, 2, 3);
 		vec3 lookat(0, 0, 0);
-		float dist_to_focus = 10.0; (lookfrom - lookat).length();
-		float aperture = 0.1;
+		float dist_to_focus = 10.0; 
+		float aperture = 0.0;
 		*d_camera = new camera(lookfrom,
 			lookat,
 			vec3(0, 1, 0),
-			30.0,
+			20.0f,
 			float(nx) / float(ny),
 			aperture,
-			dist_to_focus);
+			dist_to_focus,
+			0.0f,
+			1.0f);
 	}
 }
 
 __global__ void free_world(hitable** d_list, hitable** d_world, camera** d_camera) {
 	for (int i = 0; i < 22 * 22 + 1 + 3; i++) {
-		delete ((sphere*)d_list[i])->mat_ptr;
+		//delete ((sphere*)d_list[i])->mat_ptr;
+		delete ((moving_sphere*)d_list[i])->mat_ptr;
 		delete d_list[i];
 	}
 	delete* d_world;
@@ -162,8 +170,6 @@ __global__ void free_world(hitable** d_list, hitable** d_world, camera** d_camer
 
 
 void write_to_png(char const* filename, int w, int h, int n, vec3* data) {
-	//把vec3缓存转为unsigned char*缓存
-	using namespace std;
 	unsigned char* uc_data = (unsigned char*)std::malloc(w * h * n * sizeof(unsigned char));
 	unsigned char* p = uc_data;
 	FILE* fp = fopen(filename, "wb");
@@ -196,9 +202,9 @@ void write_to_ppm(char const* filename, int w, int h, vec3* data) {
 }
 
 int main() {
-	int nx = 500;
-	int ny = 300;
-	int ns = 10;
+	int nx = 1200;
+	int ny = 800;
+	int ns = 100;
 	// 设定每个block包含thread的数量为 8 x 8
 	/* 设定为 8 x 8 的理由有两个：1.这样的一个较小的方形结构使得每个像素执行的工作量相似。
 	假设在一个block中有一个像素执行的工作量比其他的大很多，那么这个block的效率会受限。
@@ -261,17 +267,18 @@ int main() {
 	std::cerr << "渲染耗时：" << timer_seconds << " 秒。\n";
 
 	// Output FB as Image
-	//write_to_ppm("result/cover.ppm", nx, ny, fb);
-	write_to_png("result/fuck.png", nx, ny, 3, fb);
+	//write_to_ppm("result/Motion_Blur.ppm", nx, ny, fb);
+	write_to_png("result/Motion_Blur.png", nx, ny, 3, fb);
 
 	// clean up
 	checkCudaErrors(cudaDeviceSynchronize());
 	free_world << <1, 1 >> > (d_list, d_world, d_camera);
 	checkCudaErrors(cudaGetLastError());
-	checkCudaErrors(cudaFree(d_camera));
+	checkCudaErrors(cudaFree(d_camera)); //CUDA error = 700
 	checkCudaErrors(cudaFree(d_world));
 	checkCudaErrors(cudaFree(d_list));
 	checkCudaErrors(cudaFree(d_rand_state));
+	checkCudaErrors(cudaFree(d_rand_state2));
 	checkCudaErrors(cudaFree(fb));
 
 	cudaDeviceReset();

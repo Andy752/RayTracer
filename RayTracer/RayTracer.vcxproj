@@ -15,6 +15,7 @@
     <ClInclude Include="src\core\hitable.h" />
     <ClInclude Include="src\core\hitable_list.h" />
     <ClInclude Include="src\core\material.h" />
+    <ClInclude Include="src\core\moving_sphere.h" />
     <ClInclude Include="src\core\ray.h" />
     <ClInclude Include="src\core\sphere.h" />
     <ClInclude Include="src\core\vec3.h" />
