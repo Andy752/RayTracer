@@ -1,5 +1,5 @@
-﻿#include <cuda_runtime.h>
-#include <device_launch_parameters.h>
+﻿#include "cuda_runtime.h"
+#include "device_launch_parameters.h"
 #include <curand_kernel.h>
 
 #include <fstream>
@@ -21,7 +21,13 @@
 
 #define checkCudaErrors(val) check_cuda( (val), #val, __FILE__, __LINE__ )
 
-
+#define Koch_snowflake
+#define K1 9
+#define K2 81
+#define K3 729
+#define K4 6561
+#define K5 59049
+const int sphere_num = 2 + K1 + K2 + K3 + K4;
 /* 要点：
 1.在合适的地方添加 __device__ 标志
 2.记得释放资源，如调用cudaFree
@@ -111,21 +117,23 @@ __global__ void render(vec3* fb, int max_x, int max_y, int ns, camera** cam, hit
 
 #define RND (curand_uniform(&local_rand_state))
 
-__global__ void create_world(hitable** d_list, hitable** d_world, camera** d_camera, int nx, int ny, curandState* rand_state) {
+__global__ void create_world(hitable** d_list, hitable** d_world, camera** d_camera, int nx, int ny,
+	curandState* rand_state,vec3* sphere_list_old, vec3* sphere_list_new, vec3* sphere_list_heart) {
 	if (threadIdx.x == 0 && blockIdx.x == 0) {
 		curandState local_rand_state = *rand_state;
 		d_list[0] = new sphere(vec3(0, -1000.0, -1), 1000,
-			new lambertian(vec3(0.5f, 0.5f, 0.5f)));
+			new lambertian(vec3(0.5f, 0.5f, 0.5f))); // 平面大球
 		int i = 1;
+#ifndef  Koch_snowflake
 		for (int a = -11; a < 11; a++) {
 			for (int b = -11; b < 11; b++) {
 				float choose_mat = RND;
 				vec3 center(a + 0.9f * RND, 0.2f, b + 0.9f * RND);
 				if (choose_mat < 0.8f) {
-					//d_list[i++] = new sphere(center, 0.2f,
-					//	new lambertian(vec3(RND * RND, RND * RND, RND * RND)));
-					d_list[i++] = new moving_sphere(center, center + vec3(0.0f, 0.5f * RND, 0.0f), 0.0f, 1.0f, 0.2f,
-						new lambertian(vec3(RND * RND, RND * RND, RND * RND))); // 注意相应修改free_world中的代码
+					d_list[i++] = new sphere(center, 0.2f,
+						new lambertian(vec3(RND * RND, RND * RND, RND * RND)));
+					//d_list[i++] = new moving_sphere(center, center + vec3(0.0f, 0.5f * RND, 0.0f), 0.0f, 1.0f, 0.2f,
+					//	new lambertian(vec3(RND * RND, RND * RND, RND * RND))); // 注意相应修改free_world中的代码
 				}
 				else if (choose_mat < 0.95f) {
 					d_list[i++] = new sphere(center, 0.2f,
@@ -139,12 +147,139 @@ __global__ void create_world(hitable** d_list, hitable** d_world, camera** d_cam
 		d_list[i++] = new sphere(vec3(0, 1, 0), 1.0, new dielectric(1.5));
 		d_list[i++] = new sphere(vec3(-4, 1, 0), 1.0, new lambertian(vec3(0.4, 0.2, 0.1)));
 		d_list[i++] = new sphere(vec3(4, 1, 0), 1.0, new metal(vec3(0.7, 0.6, 0.5), 0.0));
-		*rand_state = local_rand_state;
-		*d_world = new hitable_list(d_list, 22 * 22 + 1 + 3);
+#endif
 
-		vec3 lookfrom(13, 2, 3);
-		vec3 lookat(0, 0, 0);
-		float dist_to_focus = 10.0; 
+		* rand_state = local_rand_state;
+#ifndef Koch_snowflake
+		* d_world = new hitable_list(d_list, 22 * 22 + 1 + 3);
+#endif // !Koch_snowflake
+
+#ifdef Koch_snowflake
+		d_list[i++] = new sphere(vec3(0, 1, 0), 1.0, new metal(vec3(0.3f, 0.3f, 0.3f), 0.0)); // 主球
+		//开始迭代创建3D科赫雪花球
+		int level = 4; // 计算4层，最后一层有Seven_4个球
+		vec3 h0(0, 1, 0);
+		vec3 last_heart(0, 0, 0);
+		sphere_list_old[0] = h0;
+		sphere_list_heart[0] = last_heart;
+		for(int k = 0;k < level;++k){
+			// 本轮迭代需要创建 9 * sphere_num_level数量的球体，即需要sphere_num_level个上一个level的球心
+			int sphere_num_level = (k == 0 ? 1 : (k == 1 ? K1 : (k == 2 ? K2 : (k == 3 ? K3 : (k == 4 ? K4 : K5)))));
+			for (int j = 0; j < sphere_num_level; ++j) {
+				float last_r = powf(1.0f / 3.0f, k);
+				float current_r = last_r / 3.0f;
+				// 取得父亲球体的上法向量
+				vec3 up = sphere_list_old[j] - sphere_list_heart[int(j/9)];
+				/*
+				printf("****** sphere_num_level = %d, j = %d, j/t = %d , *****\n", sphere_num_level, j, int(j / 7));
+				printf("sphere_list_old[j] = (%f,%f,%f),sphere_list_heart[int(j/9)]=(%f,%f,%f)", sphere_list_old[j].x(),
+					sphere_list_old[j].y(), sphere_list_old[j].z(), sphere_list_heart[int(j / 9)].x(),
+					sphere_list_heart[int(j / 9)].y(), sphere_list_heart[int(j / 9)].z());
+				*/
+				up.make_unit_vector();
+				//vec3 h1 = sphere_list_old[j] + (last_r + current_r) * up;
+				// 绘制周围6个小球
+				// 构造与up垂直的一个向量n1
+				vec3 n1;
+				if (fabs(up.y()) > FLT_EPSILON) {
+					n1 = vec3(1.0f, -up.x() / up.y(), 0);
+				}
+				else if (fabs(up.x()) > FLT_EPSILON) {
+					n1 = vec3(-up.y() / up.x(), 1.0f , 0);
+				}
+				else {
+					n1 = vec3(1.0f, 0, -up.x() / up.z());
+				}
+				n1.make_unit_vector(); // 周围第一个小球的上法向量
+				vec3 h1 = sphere_list_old[j] + (last_r + current_r) * n1; // 周围第一个小球球心
+				// 旋转60度得到周围第二个小球的上法向量
+				const float theta = 3.14159265f / 3.0f; // pi/3
+				vec3 n2 = n1 * cos(theta) + cross(n1, up) * sin(theta); 
+				n2.make_unit_vector();
+				vec3 h2 = sphere_list_old[j] + (last_r + current_r) * n2; // 周围第二个小球球心
+				// 周围第三个小球球心
+				vec3 n3 = n2 * cos(theta) + cross(n2, up) * sin(theta);
+				n3.make_unit_vector();
+				vec3 h3 = sphere_list_old[j] + (last_r + current_r) * n3;
+				// 周围第四个小球球心
+				vec3 n4 = n3 * cos(theta) + cross(n3, up) * sin(theta);
+				n4.make_unit_vector();
+				vec3 h4 = sphere_list_old[j] + (last_r + current_r) * n4;
+				// 周围第五个小球球心
+				vec3 n5 = n4 * cos(theta) + cross(n4, up) * sin(theta);
+				n5.make_unit_vector();
+				vec3 h5 = sphere_list_old[j] + (last_r + current_r) * n5;
+				// 周围第六个小球球心
+				vec3 n6 = n5 * cos(theta) + cross(n5, up) * sin(theta);
+				n6.make_unit_vector();
+				vec3 h6 = sphere_list_old[j] + (last_r + current_r) * n6;
+				// 求顶部3个小球球心
+				vec3 n7 = 1.5f * up + n1;
+				n7.make_unit_vector();
+				vec3 h7 = sphere_list_old[j] + (last_r + current_r) * n7;// 顶部第一个小球球心
+				vec3 n8 = 1.5f * up + n3;
+				n8.make_unit_vector();
+				vec3 h8 = sphere_list_old[j] + (last_r + current_r) * n8;// 顶部第二个小球球心
+				vec3 n9 = 1.5f * up + n5;
+				n9.make_unit_vector();
+				vec3 h9 = sphere_list_old[j] + (last_r + current_r) * n9;// 顶部第三个小球球心
+
+				/*
+				printf("up = (%f,%f,%f)\n", up.x(), up.y(), up.z());
+				printf("h1 = (%f,%f,%f)\n", h1.x(), h1.y(), h1.z());
+
+				printf("n1 = (%f,%f,%f)\n", n1.x(), n1.y(), n1.z());
+				printf("h2 = (%f,%f,%f)\n", h2.x(), h2.y(), h2.z());
+
+				printf("n2 = (%f,%f,%f)\n", n2.x(), n2.y(), n2.z());
+				printf("h3 = (%f,%f,%f)\n", h3.x(), h3.y(), h3.z());
+
+				printf("n3 = (%f,%f,%f)\n", n3.x(), n3.y(), n3.z());
+				printf("h4 = (%f,%f,%f)\n", h4.x(), h4.y(), h4.z());
+
+				printf("n4 = (%f,%f,%f)\n", n4.x(), n4.y(), n4.z());
+				printf("h5 = (%f,%f,%f)\n", h5.x(), h5.y(), h5.z());
+
+				printf("n5 = (%f,%f,%f)\n", n5.x(), n5.y(), n5.z());
+				printf("h6 = (%f,%f,%f)\n", h6.x(), h6.y(), h6.z());
+
+				printf("n6 = (%f,%f,%f)\n", n6.x(), n6.y(), n6.z());
+				printf("h7 = (%f,%f,%f)\n", h7.x(), h7.y(), h7.z());
+				printf("-------------------------------------------\n");
+				*/
+
+				// 添加周围小球到列表中
+				d_list[i++] = new sphere(h1, current_r, new metal(vec3(0.3f, 0.3f, 0.3f), 0.0));
+				d_list[i++] = new sphere(h2, current_r, new metal(vec3(0.3f, 0.3f, 0.3f), 0.0));
+				d_list[i++] = new sphere(h3, current_r, new metal(vec3(0.3f, 0.3f, 0.3f), 0.0));
+				d_list[i++] = new sphere(h4, current_r, new metal(vec3(0.3f, 0.3f, 0.3f), 0.0));
+				d_list[i++] = new sphere(h5, current_r, new metal(vec3(0.3f, 0.3f, 0.3f), 0.0));
+				d_list[i++] = new sphere(h6, current_r, new metal(vec3(0.3f, 0.3f, 0.3f), 0.0));
+				d_list[i++] = new sphere(h7, current_r, new metal(vec3(0.3f, 0.3f, 0.3f), 0.0));
+				d_list[i++] = new sphere(h8, current_r, new metal(vec3(0.3f, 0.3f, 0.3f), 0.0));
+				d_list[i++] = new sphere(h9, current_r, new metal(vec3(0.3f, 0.3f, 0.3f), 0.0));
+				sphere_list_new[j * 9] = h1;
+				sphere_list_new[j * 9 + 1] = h2;
+				sphere_list_new[j * 9 + 2] = h3;
+				sphere_list_new[j * 9 + 3] = h4;
+				sphere_list_new[j * 9 + 4] = h5;
+				sphere_list_new[j * 9 + 5] = h6;
+				sphere_list_new[j * 9 + 6] = h7;
+				sphere_list_new[j * 9 + 7] = h8;
+				sphere_list_new[j * 9 + 8] = h9;
+			}
+			// 交换三个球心列表
+			vec3* temp = sphere_list_heart;
+			sphere_list_heart = sphere_list_old;
+			sphere_list_old = sphere_list_new;
+			sphere_list_new = temp;
+		}
+		*d_world = new hitable_list(d_list, sphere_num);
+#endif // Koch_snowflake
+
+		vec3 lookfrom(8, 8, 3);
+		vec3 lookat(0, 1, 0);
+		float dist_to_focus = 10.0;
 		float aperture = 0.0;
 		*d_camera = new camera(lookfrom,
 			lookat,
@@ -159,15 +294,14 @@ __global__ void create_world(hitable** d_list, hitable** d_world, camera** d_cam
 }
 
 __global__ void free_world(hitable** d_list, hitable** d_world, camera** d_camera) {
-	for (int i = 0; i < 22 * 22 + 1 + 3; i++) {
-		//delete ((sphere*)d_list[i])->mat_ptr;
-		delete ((moving_sphere*)d_list[i])->mat_ptr;
+	for (int i = 0; i < sphere_num; i++) {
+		delete ((sphere*)d_list[i])->mat_ptr;
+		//delete ((moving_sphere*)d_list[i])->mat_ptr;
 		delete d_list[i];
 	}
 	delete* d_world;
 	delete* d_camera;
 }
-
 
 void write_to_png(char const* filename, int w, int h, int n, vec3* data) {
 	unsigned char* uc_data = (unsigned char*)std::malloc(w * h * n * sizeof(unsigned char));
@@ -202,9 +336,9 @@ void write_to_ppm(char const* filename, int w, int h, vec3* data) {
 }
 
 int main() {
-	int nx = 1200;
-	int ny = 800;
-	int ns = 100;
+	int nx = 1024; //1024
+	int ny = 576; //576
+	int ns = 150;
 	// 设定每个block包含thread的数量为 8 x 8
 	/* 设定为 8 x 8 的理由有两个：1.这样的一个较小的方形结构使得每个像素执行的工作量相似。
 	假设在一个block中有一个像素执行的工作量比其他的大很多，那么这个block的效率会受限。
@@ -232,22 +366,33 @@ int main() {
 	curandState* d_rand_state;
 	checkCudaErrors(cudaMalloc((void**)& d_rand_state, num_pixels * sizeof(curandState)));
 	curandState* d_rand_state2;
-	checkCudaErrors(cudaMalloc((void**)& d_rand_state2, 1 * sizeof(curandState)));
+	checkCudaErrors(cudaMalloc((void**)& d_rand_state2, sphere_num * sizeof(curandState)));
 
 	// 初始化d_rand_state2，用于创建world
 	rand_init << <1, 1 >> > (d_rand_state2);
 	checkCudaErrors(cudaGetLastError());
 	checkCudaErrors(cudaDeviceSynchronize());
 
+#ifdef Koch_snowflake
+	vec3* sphere_list_old;
+	checkCudaErrors(cudaMallocManaged((void**)& sphere_list_old, K4));
+	vec3* sphere_list_new;
+	checkCudaErrors(cudaMallocManaged((void**)& sphere_list_new, K4));
+	vec3* sphere_list_heart;
+	checkCudaErrors(cudaMallocManaged((void**)& sphere_list_heart, K4));
+#endif // Koch_snowflake
+
+
 	// make our world of hitables & the camera
 	hitable** d_list;
-	int num_hitables = 22 * 22 + 1 + 3;
+	//int num_hitables = 22 * 22 + 1 + 3;
+	int num_hitables = sphere_num;
 	checkCudaErrors(cudaMalloc((void**)& d_list, num_hitables * sizeof(hitable*)));
 	hitable** d_world;
 	checkCudaErrors(cudaMalloc((void**)& d_world, sizeof(hitable*)));
 	camera** d_camera;
 	checkCudaErrors(cudaMalloc((void**)& d_camera, sizeof(camera*)));
-	create_world << <1, 1 >> > (d_list, d_world, d_camera, nx, ny, d_rand_state2);
+	create_world << <1, 1 >> > (d_list, d_world, d_camera, nx, ny, d_rand_state2,sphere_list_old, sphere_list_new, sphere_list_heart);
 	checkCudaErrors(cudaGetLastError());
 	checkCudaErrors(cudaDeviceSynchronize());
 
@@ -268,7 +413,7 @@ int main() {
 
 	// Output FB as Image
 	//write_to_ppm("result/Motion_Blur.ppm", nx, ny, fb);
-	write_to_png("result/Motion_Blur.png", nx, ny, 3, fb);
+	write_to_png("result/3D_Koch_snowflake.png", nx, ny, 3, fb);
 
 	// clean up
 	checkCudaErrors(cudaDeviceSynchronize());
@@ -281,6 +426,12 @@ int main() {
 	checkCudaErrors(cudaFree(d_rand_state2));
 	checkCudaErrors(cudaFree(fb));
 
-	cudaDeviceReset();
-}
+#ifdef Koch_snowflake
+	checkCudaErrors(cudaFree(sphere_list_old));
+	checkCudaErrors(cudaFree(sphere_list_new));
+	checkCudaErrors(cudaFree(sphere_list_heart));
+#endif // Koch_snowflake
 
+	cudaDeviceReset();
+	return 0;
+}

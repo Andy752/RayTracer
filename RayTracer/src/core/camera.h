@@ -13,7 +13,7 @@ __device__ vec3 random_in_unit_disk(curandState* local_rand_state) {
 class camera {
 public:
 	__device__ camera(vec3 lookfrom, vec3 lookat, vec3 vup, float vfov, float aspect,
-		float aperture, float focus_dist,float t0,float t1) { // vfov is top to bottom in degrees
+		float aperture, float focus_dist,float t0,float t1):M_PI(3.1415926) { // vfov is top to bottom in degrees
 		time0 = t0;
 		time1 = t1;
 		lens_radius = aperture / 2.0f;
@@ -41,6 +41,6 @@ public:
 	vec3 vertical;
 	vec3 u, v, w;
 	float lens_radius;
-	const float M_PI = 3.1415926;
+	const float M_PI;
 	float time0, time1;
 };
