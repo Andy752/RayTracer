@@ -8,8 +8,6 @@
 #include <iostream>
 
 class vec3 {
-
-
 public:
 	// 添加__host__ __device__关键字使得这些函数可以同时运行在CPU和GPU上
 	__host__ __device__ vec3() {}
@@ -37,11 +35,8 @@ public:
 	__host__ __device__ inline float squared_length() const { return e[0] * e[0] + e[1] * e[1] + e[2] * e[2]; }
 	__host__ __device__ inline void make_unit_vector();
 
-
 	float e[3];
 };
-
-
 
 inline std::istream& operator>>(std::istream& is, vec3& t) {
 	is >> t.e[0] >> t.e[1] >> t.e[2];
@@ -95,7 +90,6 @@ __host__ __device__ inline vec3 cross(const vec3& v1, const vec3& v2) {
 		(-(v1.e[0] * v2.e[2] - v1.e[2] * v2.e[0])),
 		(v1.e[0] * v2.e[1] - v1.e[1] * v2.e[0]));
 }
-
 
 __host__ __device__ inline vec3& vec3::operator+=(const vec3& v) {
 	e[0] += v.e[0];

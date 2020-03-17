@@ -4,7 +4,6 @@ struct hit_record;
 #include "ray.h"
 #include "hitable.h"
 
-
 __device__ float schlick(float cosine, float ref_idx) {
 	float r0 = (1.0f - ref_idx) / (1.0f + ref_idx);
 	r0 = r0 * r0;
@@ -47,7 +46,7 @@ public:
 	__device__ lambertian(const vec3& a) : albedo(a) {}
 	__device__ virtual bool scatter(const ray& r_in, const hit_record& rec, vec3& attenuation, ray& scattered, curandState* local_rand_state) const {
 		vec3 target = rec.p + rec.normal + random_in_unit_sphere(local_rand_state);
-		scattered = ray(rec.p, target - rec.p,r_in.time());
+		scattered = ray(rec.p, target - rec.p, r_in.time());
 		attenuation = albedo;
 		return true;
 	}
