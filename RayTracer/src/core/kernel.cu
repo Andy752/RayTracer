@@ -21,13 +21,19 @@
 
 #define checkCudaErrors(val) check_cuda( (val), #val, __FILE__, __LINE__ )
 
-#define Sphereflake
+// #define Sphereflake
 #define K1 9
 #define K2 81
 #define K3 729
 #define K4 6561
 #define K5 59049
+
+#ifdef  Sphereflake
 const int sphere_num = 2 + K1 + K2 + K3 + K4;
+#else
+const int sphere_num = 22 * 22 + 1 + 3;
+#endif
+
 /* 要点：
 1.在合适的地方添加 __device__ 标志
 2.记得释放资源，如调用cudaFree
@@ -118,7 +124,11 @@ __global__ void render(vec3* fb, int max_x, int max_y, int ns, camera** cam, hit
 #define RND (curand_uniform(&local_rand_state))
 
 __global__ void create_world(hitable** d_list, hitable** d_world, camera** d_camera, int nx, int ny,
-	curandState* rand_state, vec3* sphere_list_old, vec3* sphere_list_new, vec3* sphere_list_heart) {
+	curandState* rand_state
+#ifdef Sphereflake
+	, vec3* sphere_list_old, vec3* sphere_list_new, vec3* sphere_list_heart
+#endif
+) {
 	if (threadIdx.x == 0 && blockIdx.x == 0) {
 		curandState local_rand_state = *rand_state;
 		d_list[0] = new sphere(vec3(0, -1000.0, -1), 1000,
@@ -336,8 +346,8 @@ void write_to_ppm(char const* filename, int w, int h, vec3* data) {
 }
 
 int main() {
-	int nx = 1024; //1024
-	int ny = 576; //576
+	int nx = 500; //1024
+	int ny = 300; //576
 	int ns = 1;
 	// 设定每个block包含thread的数量为 8 x 8
 	/* 设定为 8 x 8 的理由有两个：1.这样的一个较小的方形结构使得每个像素执行的工作量相似。
@@ -380,18 +390,24 @@ int main() {
 	checkCudaErrors(cudaMallocManaged((void**)& sphere_list_new, K4));
 	vec3* sphere_list_heart;
 	checkCudaErrors(cudaMallocManaged((void**)& sphere_list_heart, K4));
+
 #endif // Sphereflake
 
 	// make our world of hitables & the camera
 	hitable** d_list;
-	//int num_hitables = 22 * 22 + 1 + 3;
 	int num_hitables = sphere_num;
 	checkCudaErrors(cudaMalloc((void**)& d_list, num_hitables * sizeof(hitable*)));
 	hitable** d_world;
 	checkCudaErrors(cudaMalloc((void**)& d_world, sizeof(hitable*)));
 	camera** d_camera;
 	checkCudaErrors(cudaMalloc((void**)& d_camera, sizeof(camera*)));
-	create_world << <1, 1 >> > (d_list, d_world, d_camera, nx, ny, d_rand_state2, sphere_list_old, sphere_list_new, sphere_list_heart);
+
+#ifdef Sphereflake
+	create_world << <1, 1 >> > (d_list, d_world, d_camera, nx, ny, d_rand_state2,sphere_list_old,sphere_list_new,sphere_list_heart);
+#else
+	create_world << <1, 1 >> > (d_list, d_world, d_camera, nx, ny, d_rand_state2);
+#endif
+	
 	checkCudaErrors(cudaGetLastError());
 	checkCudaErrors(cudaDeviceSynchronize());
 
@@ -403,7 +419,9 @@ int main() {
 	render_init << <blocks, threads >> > (nx, ny, d_rand_state);
 	checkCudaErrors(cudaGetLastError());
 	checkCudaErrors(cudaDeviceSynchronize());
+
 	render << <blocks, threads >> > (fb, nx, ny, ns, d_camera, d_world, d_rand_state);
+
 	checkCudaErrors(cudaGetLastError());
 	checkCudaErrors(cudaDeviceSynchronize());
 	stop = clock();
@@ -412,13 +430,13 @@ int main() {
 
 	// Output FB as Image
 	//write_to_ppm("result/Motion_Blur.ppm", nx, ny, fb);
-	write_to_png("result/test.png", nx, ny, 3, fb);
+	write_to_png("result/test_3_3.png", nx, ny, 3, fb);
 
 	// clean up
 	checkCudaErrors(cudaDeviceSynchronize());
 	free_world << <1, 1 >> > (d_list, d_world, d_camera);
 	checkCudaErrors(cudaGetLastError());
-	checkCudaErrors(cudaFree(d_camera)); //CUDA error = 700
+	checkCudaErrors(cudaFree(d_camera));
 	checkCudaErrors(cudaFree(d_world));
 	checkCudaErrors(cudaFree(d_list));
 	checkCudaErrors(cudaFree(d_rand_state));
