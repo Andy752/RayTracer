@@ -6,6 +6,7 @@ public:
 	__device__ hitable_list() {}
 	__device__ hitable_list(hitable** l, int n) { list = l; list_size = n; }
 	__device__ virtual bool hit(const ray& r, float tmin, float tmax, hit_record& rec) const;
+	// __device__ virtual bool hitable_list::bounding_box(float t0, float t1, aabb& box) const;
 	hitable** list;
 	int list_size;
 };
@@ -23,3 +24,8 @@ __device__ bool hitable_list::hit(const ray& r, float t_min, float t_max, hit_re
 	}
 	return hit_anything;
 }
+
+// __device__ bool hitable_list::bounding_box(float t0, float t1, aabb& box) const
+// {
+// 	return true;
+// }

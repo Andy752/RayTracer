@@ -17,6 +17,7 @@
 #include "hitable_list.h"
 #include "camera.h"
 #include "material.h"
+#include "rt_texture.h"
 #include "moving_sphere.h"
 
 #define checkCudaErrors(val) check_cuda( (val), #val, __FILE__, __LINE__ )
@@ -131,8 +132,9 @@ __global__ void create_world(hitable** d_list, hitable** d_world, camera** d_cam
 ) {
 	if (threadIdx.x == 0 && blockIdx.x == 0) {
 		curandState local_rand_state = *rand_state;
+		rt_texture *checker = new checker_texture(new constant_texture(vec3(0.2, 0.3, 0.1)),new constant_texture(vec3(0.9,0.9,0.9)));
 		d_list[0] = new sphere(vec3(0, -1000.0, -1), 1000,
-			new lambertian(vec3(0.5f, 0.5f, 0.5f))); // 平面大球
+			new lambertian(checker)); // 平面大球
 		int i = 1;
 #ifndef  Sphereflake
 		for (int a = -11; a < 11; a++) {
@@ -141,7 +143,7 @@ __global__ void create_world(hitable** d_list, hitable** d_world, camera** d_cam
 				vec3 center(a + 0.9f * RND, 0.2f, b + 0.9f * RND);
 				if (choose_mat < 0.8f) {
 					d_list[i++] = new sphere(center, 0.2f,
-						new lambertian(vec3(RND * RND, RND * RND, RND * RND)));
+						new lambertian(new constant_texture(vec3(RND * RND, RND * RND, RND * RND))));
 					//d_list[i++] = new moving_sphere(center, center + vec3(0.0f, 0.5f * RND, 0.0f), 0.0f, 1.0f, 0.2f,
 					//	new lambertian(vec3(RND * RND, RND * RND, RND * RND))); // 注意相应修改free_world中的代码
 				}
@@ -155,13 +157,14 @@ __global__ void create_world(hitable** d_list, hitable** d_world, camera** d_cam
 			}
 		}
 		d_list[i++] = new sphere(vec3(0, 1, 0), 1.0, new dielectric(1.5));
-		d_list[i++] = new sphere(vec3(-4, 1, 0), 1.0, new lambertian(vec3(0.4, 0.2, 0.1)));
+		d_list[i++] = new sphere(vec3(-4, 1, 0), 1.0, new lambertian(new constant_texture(vec3(0.4, 0.2, 0.1))));
 		d_list[i++] = new sphere(vec3(4, 1, 0), 1.0, new metal(vec3(0.7, 0.6, 0.5), 0.0));
 #endif
 
 		* rand_state = local_rand_state;
 #ifndef Sphereflake
 		* d_world = new hitable_list(d_list, 22 * 22 + 1 + 3);
+		// * d_world = new bvh_node(d_list, 22 * 22 + 1 + 3,0.0f,1.0f,rand_state,0); // 把hitable_list改为bvh_node以使用bvh
 #endif // !Sphereflake
 
 #ifdef Sphereflake
@@ -346,9 +349,9 @@ void write_to_ppm(char const* filename, int w, int h, vec3* data) {
 }
 
 int main() {
-	int nx = 500; //1024
-	int ny = 300; //576
-	int ns = 1;
+	int nx = 1024; //1024
+	int ny = 576; //576
+	int ns = 100;
 	// 设定每个block包含thread的数量为 8 x 8
 	/* 设定为 8 x 8 的理由有两个：1.这样的一个较小的方形结构使得每个像素执行的工作量相似。
 	假设在一个block中有一个像素执行的工作量比其他的大很多，那么这个block的效率会受限。
@@ -430,7 +433,7 @@ int main() {
 
 	// Output FB as Image
 	//write_to_ppm("result/Motion_Blur.ppm", nx, ny, fb);
-	write_to_png("result/test_3_3.png", nx, ny, 3, fb);
+	write_to_png("result/check_texture.png", nx, ny, 3, fb);
 
 	// clean up
 	checkCudaErrors(cudaDeviceSynchronize());

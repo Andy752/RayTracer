@@ -7,6 +7,9 @@
     <Filter Include="svpng">
       <UniqueIdentifier>{d4dc6724-70f9-46f5-97c0-c42bd8329dcc}</UniqueIdentifier>
     </Filter>
+    <Filter Include="others">
+      <UniqueIdentifier>{efb6ccb7-34ca-4259-9a1c-3a3cea04d9e9}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\core\camera.h">
@@ -31,6 +34,9 @@
       <Filter>core</Filter>
     </ClInclude>
     <ClInclude Include="src\core\moving_sphere.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\rt_texture.h">
       <Filter>core</Filter>
     </ClInclude>
   </ItemGroup>
